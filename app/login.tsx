@@ -4,7 +4,8 @@ import {
     signInWithCredential,
     signInWithEmailAndPassword,
     updateProfile,
-    GoogleAuthProvider
+    GoogleAuthProvider,
+    sendPasswordResetEmail
 } from 'firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -56,6 +57,23 @@ export default function LoginScreen() {
       }
     } catch (e) {
       console.log('Error migrating recipes', e);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert('Olvidaste tu contraseña', 'Por favor, ingresa tu email arriba para enviarte el enlace de recuperación.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      Alert.alert('Correo enviado', 'Revisa tu bandeja de entrada o spam para restablecer tu contraseña.');
+    } catch (error: any) {
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-email') {
+        Alert.alert('Error', 'Verifica que el email ingresado sea correcto.');
+      } else {
+        Alert.alert('Error', 'No se pudo enviar el correo de recuperación.');
+      }
     }
   };
 
@@ -185,6 +203,12 @@ export default function LoginScreen() {
             secureTextEntry
           />
 
+          {mode === 'login' && (
+            <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn}>
+              <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+            </TouchableOpacity>
+          )}
+
           {mode === 'register' && (
             <>
               <Text style={styles.fieldLabel}>Repetir Contraseña</Text>
@@ -274,6 +298,8 @@ const styles = StyleSheet.create({
     color: '#F0EDE8', fontSize: 15, marginBottom: 16,
     borderWidth: 1, borderColor: '#2E2A25',
   },
+  forgotBtn: { alignItems: 'flex-end', marginBottom: 16, marginTop: -4 },
+  forgotText: { color: '#F2B84B', fontSize: 13, fontWeight: '500' },
   btnPrimary: {
     backgroundColor: '#F2B84B', borderRadius: 50,
     paddingVertical: 16, alignItems: 'center', marginTop: 4,
