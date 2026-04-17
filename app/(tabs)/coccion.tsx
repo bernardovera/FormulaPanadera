@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, AppState } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTimerStore } from '../../store/timerStore';
 
@@ -10,50 +10,117 @@ export default function CoccionScreen() {
   const [seconds, setSeconds] = useState(0);
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (coccionData) {
-      clearInterval(intervalRef.current!);
-      setRunning(false); setFinished(false);
-      setSeconds(coccionData.tiempo * 60);
-    }
-  }, [coccionData]);
-
-  const start = async () => {
-    if (seconds === 0) return;
-    setRunning(true);
-
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    await Notifications.scheduleNotificationAsync({
-      content: { title: '¡Cocción completada!', body: 'Es hora de revisar el horno.', sound: true },
-      trigger: { seconds } as any,
-    });
-
-    intervalRef.current = setInterval(() => {
-      setSeconds(prev => {
-        if (prev <= 1) { clearInterval(intervalRef.current!); setRunning(false); setFinished(true); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
-  const pause = async () => { 
-    clearInterval(intervalRef.current!); 
-    setRunning(false); 
-    await Notifications.cancelAllScheduledNotificationsAsync();
-  };
-
-  const reset = async () => {
-    clearInterval(intervalRef.current!);
-    setRunning(false); setFinished(false);
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    setSeconds(coccionData ? coccionData.tiempo * 60 : 0);
-  };
+  const [targetTime, setTargetTime] = useState<number | null>(null);
+  const appState = useRef(AppState.currentState);
 
   const fmt = (s: number) => {
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  };
+
+  useEffect(() => {
+    if (coccionData) {
+      setRunning(false);
+      setFinished(false);
+      setTargetTime(null);
+      setSeconds(coccionData.tiempo * 60);
+    }
+  }, [coccionData]);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (running && targetTime) {
+      interval = setInterval(() => {
+        const now = Date.now();
+        const left = Math.max(0, Math.round((targetTime - now) / 1000));
+        setSeconds(left);
+        if (left <= 0) {
+          setRunning(false);
+          setFinished(true);
+          setTargetTime(null);
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [running, targetTime]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        Notifications.dismissNotificationAsync('coccion_bg').catch(() => {});
+      } else if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
+        if (running && targetTime) {
+          const left = Math.max(0, Math.round((targetTime - Date.now()) / 1000));
+          if (left > 0) {
+            const d = new Date(targetTime);
+            const hh = d.getHours().toString().padStart(2, '0');
+            const mm = d.getMinutes().toString().padStart(2, '0');
+            Notifications.scheduleNotificationAsync({
+              identifier: 'coccion_bg',
+              content: {
+                title: '🔥 Cocción en progreso',
+                body: `⏰ Termina a las ${hh}:${mm}`,
+                autoDismiss: false,
+                sticky: true,
+              },
+              trigger: null,
+            }).catch(() => {});
+          }
+        }
+      }
+      appState.current = nextAppState;
+    });
+    return () => subscription.remove();
+  }, [running, targetTime]);
+
+  const start = () => {
+    if (seconds === 0) return;
+    setRunning(true);
+    setTargetTime(Date.now() + seconds * 1000);
+
+    Notifications.cancelScheduledNotificationAsync('coccion_end').then(() => {
+      Notifications.scheduleNotificationAsync({
+        identifier: 'coccion_end',
+        content: { title: '¡Cocción completada!', body: 'Es hora de revisar el horno.', sound: true },
+        trigger: { seconds } as any,
+      }).catch(e => console.warn('Notif Error:', e));
+    }).catch(e => console.warn('Cancel Error:', e));
+  };
+
+  const pause = () => { 
+    setRunning(false); 
+    setTargetTime(null);
+    Notifications.cancelScheduledNotificationAsync('coccion_end').catch(console.warn);
+    Notifications.dismissNotificationAsync('coccion_bg').catch(console.warn);
+  };
+
+  const adjustTime = (amount: number) => {
+    if (running && targetTime) {
+       const newTarget = targetTime + amount * 1000;
+       setTargetTime(newTarget);
+       const newSecs = Math.max(0, Math.round((newTarget - Date.now()) / 1000));
+       setSeconds(newSecs);
+       Notifications.cancelScheduledNotificationAsync('coccion_end').then(() => {
+         if (newSecs > 0) {
+           Notifications.scheduleNotificationAsync({
+             identifier: 'coccion_end',
+             content: { title: '¡Cocción completada!', body: 'Es hora de revisar el horno.', sound: true },
+             trigger: { seconds: newSecs } as any,
+           }).catch(() => {});
+         }
+       }).catch(() => {});
+    } else {
+       setSeconds(Math.max(0, seconds + amount));
+    }
+  };
+
+  const reset = async () => {
+    setRunning(false); 
+    setFinished(false);
+    setTargetTime(null);
+    await Notifications.cancelScheduledNotificationAsync('coccion_end').catch(() => {});
+    await Notifications.dismissNotificationAsync('coccion_bg').catch(() => {});
+    setSeconds(coccionData ? coccionData.tiempo * 60 : 0);
   };
 
   const totalSeconds = coccionData ? coccionData.tiempo * 60 : 0;
@@ -79,6 +146,10 @@ export default function CoccionScreen() {
         </View>
 
         <View style={styles.controls}>
+          <TouchableOpacity style={styles.btnAdjust} onPress={() => adjustTime(-300)}>
+            <Text style={styles.btnAdjustText}>-5m</Text>
+          </TouchableOpacity>
+
           {!running ? (
             <TouchableOpacity style={[styles.btnPlay, seconds === 0 && styles.btnDisabled]} onPress={start} disabled={seconds === 0}>
               <Text style={styles.btnPlayText}>▶ Iniciar</Text>
@@ -88,8 +159,15 @@ export default function CoccionScreen() {
               <Text style={styles.btnPauseText}>⏸ Pausar</Text>
             </TouchableOpacity>
           )}
+
+          <TouchableOpacity style={styles.btnAdjust} onPress={() => adjustTime(300)}>
+            <Text style={styles.btnAdjustText}>+5m</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ alignItems: 'center', marginBottom: 16 }}>
           <TouchableOpacity style={styles.btnReset} onPress={reset}>
-            <Text style={styles.btnResetText}>↺</Text>
+            <Text style={styles.btnResetText}>↺ Reiniciar cronómetro</Text>
           </TouchableOpacity>
         </View>
 
@@ -138,8 +216,10 @@ const styles = StyleSheet.create({
   btnPlayText: { color: '#000', fontSize: 16, fontWeight: '700' },
   btnPause: { flex: 1, backgroundColor: '#1A1A1A', borderRadius: 50, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F2B84B' },
   btnPauseText: { color: '#F2B84B', fontSize: 16, fontWeight: '700' },
-  btnReset: { backgroundColor: '#1A1A1A', borderRadius: 50, paddingVertical: 16, paddingHorizontal: 20, borderWidth: 1, borderColor: '#2E2A25' },
-  btnResetText: { color: '#8A7F72', fontSize: 20 },
+  btnAdjust: { backgroundColor: '#262420', borderRadius: 50, paddingVertical: 16, paddingHorizontal: 20, borderWidth: 1, borderColor: '#F2B84B', justifyContent: 'center', alignItems: 'center' },
+  btnAdjustText: { color: '#F2B84B', fontSize: 16, fontWeight: '700' },
+  btnReset: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 50, paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderColor: '#2E2A25' },
+  btnResetText: { color: '#8A7F72', fontSize: 14, fontWeight: '500' },
   infoBox: { backgroundColor: '#141414', borderRadius: 16, borderWidth: 1, borderColor: '#1E1C18', padding: 16 },
   infoTitle: { color: '#8A7F72', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
   cocGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },

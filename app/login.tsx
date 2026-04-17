@@ -7,14 +7,19 @@ import {
     GoogleAuthProvider,
     sendPasswordResetEmail
 } from 'firebase/auth';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
-GoogleSignin.configure({
-  webClientId: '377601270360-u7e2egdq11ab4ckbp4jrl03aam11bkn9.apps.googleusercontent.com',
-});
+let GoogleSignin: any = null;
+try {
+  GoogleSignin = require('@react-native-google-signin/google-signin').GoogleSignin;
+  GoogleSignin.configure({
+    webClientId: '377601270360-u7e2egdq11ab4ckbp4jrl03aam11bkn9.apps.googleusercontent.com',
+  });
+} catch (e) {
+  console.warn('Google Signin no configurado. Se requiere App Compilada o Dev Client.', e);
+}
 import { useState } from 'react';
 import {
     ActivityIndicator,
@@ -114,6 +119,13 @@ export default function LoginScreen() {
   };
 
   const handleGoogleAuth = async () => {
+    if (!GoogleSignin) {
+      Alert.alert(
+        'Modo Expo Go',
+        'El inicio de sesión de Google requiere dependencias nativas. Usa tu Dev Client compilado o continúa sin cuenta para probar.'
+      );
+      return;
+    }
     setLoadingGoogle(true);
     try {
       await GoogleSignin.hasPlayServices();
