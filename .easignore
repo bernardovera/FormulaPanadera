@@ -42,6 +42,7 @@ app-example
 /ios
 /android
 
-# secrets
-.env
-google-services.json
+# secrets not ignored for eas
+# EAS will securely copy the .env and google-services.json to the build server
+# .env
+# google-services.json

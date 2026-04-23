@@ -64,7 +64,8 @@ La aplicación utiliza un esquema **"Deep Dark"** que evoca sensación premium e
  ┃ ┗ 📜 data.ts              <-- Datos "semilla" (Recetas/Fórmulas preintegradas y categorías)
  ┣ 📂 store
  ┃ ┣ 📜 authStore.ts         <-- Zustand (maneja { user, loading, isGuest })
- ┃ ┗ 📜 formulaStore.ts      <-- Zustand (Manejo de la canasta de compras / receta en curso)
+ ┃ ┣ 📜 formulaStore.ts      <-- Zustand (Manejo de la canasta de compras / receta en curso)
+ ┃ ┗ 📜 timerStore.ts        <-- Zustand (Manejo global de temporizadores en segundo plano)
 ```
 
 ---
@@ -80,6 +81,10 @@ La aplicación utiliza un esquema **"Deep Dark"** que evoca sensación premium e
 3.  **Matemática de Porcentajes Relativos:**
     *   *En Panadería:* Todo se calcula relativo a la "Harina Total" (100%).
     *   *En Heladería:* Todo se calcula respecto al "Mix Total de Sólidos y Líquidos", pero puede configurarse para tener una base maestra (Ej. 100% Leche), y el PAC (Poder Anticongelante) y POD (Poder Endulzante) se deducen dinámicamente de cada ingrediente.
+
+4.  **Seguridad y Despliegue en la Nube (EAS):**
+    *   Toda clave sensible (Firebase keys, etc.) debe abstraerse en un archivo `.env` usando variables `EXPO_PUBLIC_...` e ignorarse en `.gitignore`.
+    *   Para compilar con Expo Application Services (EAS Build), siempre debe emplearse un `.easignore` que actúe igual que el `.gitignore` pero **permita** la lectura del `.env` y el `google-services.json` por los servidores de Expo en la compilación.
 
 ---
 *Este documento fue auto-generado por el asistente en base al análisis del proyecto actual. Cópialo al nuevo directorio.*
